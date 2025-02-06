@@ -15,17 +15,17 @@ bot = TeleBot(TOKEN)
 quiz_questions = [
     {
         "question": "Какой язык программирования используется для этого бота?",
-        "options": ["Python", "JavaScript", "Java"],
+        "options": ["Python", "JavaScript", "Java", "HTML"],
         "correct_answer": "Python"
     },
     {
         "question": "Какой фреймворк используется для веб-сервера?",
-        "options": ["Flask", "Django", "FastAPI"],
+        "options": ["Flask", "Django", "FastAPI", "JSON"],
         "correct_answer": "Flask"
     },
     {
         "question": "Какой метод HTTP используется для обработки вебхуков?",
-        "options": ["GET", "POST", "PUT"],
+        "options": ["GET", "POST", "PUT", "UET"],
         "correct_answer": "POST"
     }
 ]
