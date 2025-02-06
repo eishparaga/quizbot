@@ -1,18 +1,17 @@
 from flask import Flask, request, jsonify
-import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from telebot import TeleBot, types
 import random
 
 # Настройки бота
-TOKEN = '7730389641:AAFeAaFanVRv6Vlv2lksJPjTcba_JcFy7UY'  # Замените на токен вашего бота
-APP_URL = f'http://test23.pubns.ru/'  # Замените YOUR_DOMAIN на ваш домен или IP адрес
+TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'  # Замените на ваш токен
+APP_URL = 'https://test23.pubns.ru/'  # Замените на ваш домен
 WEBHOOK_URL = f'{APP_URL}webhook'
 
 # Инициализация Flask и Telebot
 app = Flask(__name__)
-bot = telebot.TeleBot(TOKEN)
+bot = TeleBot(TOKEN)
 
-# Вопросы для квиза (можно расширить)
+# Вопросы для квиза
 quiz_questions = [
     {
         "question": "Какой язык программирования используется для этого бота?",
@@ -34,18 +33,21 @@ quiz_questions = [
 # Глобальный словарь для хранения состояния пользователей
 user_states = {}
 
+# Обработчик вебхука
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    update = telebot.types.Update.de_json(request.stream.read().decode('utf-8'))
+    update = types.Update.de_json(request.stream.read().decode('utf-8'))
     bot.process_new_updates([update])
     return '', 200
 
+# Начало квиза
 @bot.message_handler(commands=['start'])
 def start_quiz(message):
     user_id = message.from_user.id
     user_states[user_id] = {"current_question": 0, "score": 0}
     send_next_question(user_id)
 
+# Отправка следующего вопроса
 def send_next_question(user_id):
     state = user_states.get(user_id)
     if not state or state["current_question"] >= len(quiz_questions):
@@ -57,13 +59,14 @@ def send_next_question(user_id):
     question_text = question_data["question"]
     options = question_data["options"]
 
-    keyboard = InlineKeyboardMarkup()
+    keyboard = types.InlineKeyboardMarkup()
     for option in options:
-        keyboard.add(InlineKeyboardButton(option, callback_data=option))
+        keyboard.add(types.InlineKeyboardButton(option, callback_data=option))
 
     bot.send_message(user_id, question_text, reply_markup=keyboard)
     state["current_question"] += 1
 
+# Обработка ответов
 @bot.callback_query_handler(func=lambda call: True)
 def handle_answer(call):
     user_id = call.from_user.id
@@ -84,13 +87,18 @@ def handle_answer(call):
 
     send_next_question(user_id)
 
+# Главная страница (для проверки работы сервера)
 @app.route('/')
 def index():
     return "Telegram Quiz Bot is running!", 200
 
+# Запуск приложения
 if __name__ == '__main__':
-    # Установка вебхука
+    # Удаление старого вебхука
     bot.remove_webhook()
+
+    # Установка нового вебхука
     bot.set_webhook(url=WEBHOOK_URL)
 
+    # Запуск Flask приложения
     app.run(host='0.0.0.0', port=5000)
