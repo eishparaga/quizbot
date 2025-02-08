@@ -5,7 +5,7 @@ import random
 from datetime import datetime
 
 # Настройки бота
-TOKEN = ''  # Замените на ваш токен
+TOKEN = '7730389641:AAFeAaFanVRv6Vlv2lksJPjTcba_JcFy7UY'  # Замените на ваш токен
 APP_URL = 'https://test23.pubns.ru/'  # Замените на ваш домен
 WEBHOOK_URL = f'{APP_URL}webhook'
 
