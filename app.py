@@ -208,6 +208,7 @@ def handle_answer(call):
 @bot.message_handler(commands=['add'])
 def add_question_start(message):
     user_id = message.from_user.id
+    # Убеждаемся, что состояние пользователя очищено
     user_states[user_id] = {"step": "enter_question"}
     bot.send_message(user_id, "Введите вопрос:")
 
@@ -217,6 +218,7 @@ def handle_add_question_states(message):
     user_id = message.from_user.id
     state = user_states.get(user_id)
 
+    # Если нет состояния, выходим
     if not state or "step" not in state:
         return
 
