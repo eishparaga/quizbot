@@ -79,39 +79,66 @@ def webhook():
 @bot.message_handler(commands=['start'])
 def start_quiz(message):
     user_id = message.from_user.id
+    if user_id not in user_states:
+        user_states[user_id] = {"step": "enter_name", "score": 0}
+
+    bot.send_message(user_id, "Введите ваше имя:")
+
+# Обработка состояний игры
+@bot.message_handler(func=lambda message: True)
+def handle_game_states(message):
+    user_id = message.from_user.id
+    state = user_states.get(user_id)
+
+    if not state:
+        return
+
+    step = state.get("step")
+
+    if step == "enter_name":
+        state["name"] = message.text.strip()
+        state["step"] = "playing"
+        send_next_question(user_id)
+    elif step == "playing":
+        questions = get_all_questions()
+        if not questions:
+            bot.send_message(user_id, "Вопросы отсутствуют. Используйте команду /add, чтобы добавить вопросы.")
+            del user_states[user_id]
+            return
+
+        # Проверяем правильность ответа
+        correct_answer = state.get("current_question_correct_answer")
+        if message.text.strip() == correct_answer:
+            state["score"] += 1
+            bot.send_message(user_id, "Правильно! Следующий вопрос:")
+            send_next_question(user_id)
+        else:
+            bot.send_message(user_id, f"Неправильно. Правильный ответ: {correct_answer}")
+            bot.send_message(user_id, f"{state['name']}, игра окончена! Ваш результат: {state['score']} баллов.")
+            del user_states[user_id]
+
+# Отправка следующего вопроса
+def send_next_question(user_id):
     questions = get_all_questions()
     if not questions:
         bot.send_message(user_id, "Вопросы отсутствуют. Используйте команду /add, чтобы добавить вопросы.")
+        del user_states[user_id]
         return
 
     # Случайно выбираем вопрос
     question_data = random.choice(questions)
     question_text = question_data["question"]
     options = question_data["options"]
+    correct_answer = question_data["correct_answer"]
 
-    keyboard = types.InlineKeyboardMarkup()
+    # Сохраняем правильный ответ для проверки
+    user_states[user_id]["current_question_correct_answer"] = correct_answer
+
+    keyboard = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
     for option in options:
-        keyboard.add(types.InlineKeyboardButton(option, callback_data=option))
+        keyboard.add(types.KeyboardButton(option))
 
     bot.send_message(user_id, question_text, reply_markup=keyboard)
-
-# Обработка ответов
-@bot.callback_query_handler(func=lambda call: True)
-def handle_answer(call):
-    user_id = call.from_user.id
-    questions = get_all_questions()
-    if not questions:
-        bot.answer_callback_query(call.id, "Вопросы отсутствуют.")
-        return
-
-    question_data = random.choice(questions)
-    correct_answer = question_data["correct_answer"]
-    user_answer = call.data
-
-    if user_answer == correct_answer:
-        bot.answer_callback_query(call.id, "Правильно!")
-    else:
-        bot.answer_callback_query(call.id, f"Неправильно. Правильный ответ: {correct_answer}")
 
 # Команда для добавления вопроса
 @bot.message_handler(commands=['add'])
@@ -126,7 +153,7 @@ def handle_add_question_states(message):
     user_id = message.from_user.id
     state = user_states.get(user_id)
 
-    if not state:
+    if not state or "step" not in state:
         return
 
     step = state.get("step")
