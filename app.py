@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 from telebot import TeleBot, types
 import sqlite3
 import random
+from datetime import datetime
 
 # Настройки бота
 TOKEN = '7730389641:AAFeAaFanVRv6Vlv2lksJPjTcba_JcFy7UY'  # Замените на ваш токен
@@ -21,10 +22,12 @@ def get_db_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
-# Создание таблицы questions (если её нет)
+# Создание таблиц в базе данных
 def init_database():
     conn = get_db_connection()
     cursor = conn.cursor()
+
+    # Таблица вопросов
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS questions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -33,6 +36,17 @@ def init_database():
         correct_answer TEXT NOT NULL
     )
     ''')
+
+    # Таблица лучших результатов
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS highscores (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL,
+        score INTEGER NOT NULL,
+        date TEXT NOT NULL
+    )
+    ''')
+
     conn.commit()
     conn.close()
 
@@ -68,6 +82,17 @@ def add_question(question, options, correct_answer):
     conn.commit()
     conn.close()
 
+# Функция для сохранения результата в таблицу highscores
+def save_highscore(username, score):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+    INSERT INTO highscores (username, score, date)
+    VALUES (?, ?, ?)
+    ''', (username, score, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+    conn.commit()
+    conn.close()
+
 # Обработчик вебхука
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -80,7 +105,7 @@ def webhook():
 def start_quiz(message):
     user_id = message.from_user.id
     if user_id not in user_states:
-        user_states[user_id] = {"step": "enter_name", "score": 0}
+        user_states[user_id] = {"step": "enter_name", "score": 0, "asked_questions": []}
 
     bot.send_message(user_id, "Введите ваше имя:")
 
@@ -101,8 +126,10 @@ def handle_game_states(message):
         send_next_question(user_id)
     elif step == "playing":
         questions = get_all_questions()
-        if not questions:
-            bot.send_message(user_id, "Вопросы отсутствуют. Используйте команду /add, чтобы добавить вопросы.")
+        if not questions or len(state["asked_questions"]) >= len(questions):
+            bot.send_message(user_id, "Все вопросы закончились! Игра окончена.")
+            save_highscore(state["name"], state["score"])
+            bot.send_message(user_id, f"{state['name']}, ваш результат: {state['score']} баллов.")
             del user_states[user_id]
             return
 
@@ -114,25 +141,39 @@ def handle_game_states(message):
             send_next_question(user_id)
         else:
             bot.send_message(user_id, f"Неправильно. Правильный ответ: {correct_answer}")
+            save_highscore(state["name"], state["score"])
             bot.send_message(user_id, f"{state['name']}, игра окончена! Ваш результат: {state['score']} баллов.")
             del user_states[user_id]
 
 # Отправка следующего вопроса
 def send_next_question(user_id):
     questions = get_all_questions()
-    if not questions:
-        bot.send_message(user_id, "Вопросы отсутствуют. Используйте команду /add, чтобы добавить вопросы.")
+    state = user_states.get(user_id)
+
+    if not questions or len(state["asked_questions"]) >= len(questions):
+        bot.send_message(user_id, "Все вопросы закончились! Игра окончена.")
+        save_highscore(state["name"], state["score"])
+        bot.send_message(user_id, f"{state['name']}, ваш результат: {state['score']} баллов.")
         del user_states[user_id]
         return
 
-    # Случайно выбираем вопрос
-    question_data = random.choice(questions)
+    # Выбираем случайный вопрос, который еще не был задан
+    available_questions = [q for q in questions if q["id"] not in state["asked_questions"]]
+    if not available_questions:
+        bot.send_message(user_id, "Все вопросы закончились! Игра окончена.")
+        save_highscore(state["name"], state["score"])
+        bot.send_message(user_id, f"{state['name']}, ваш результат: {state['score']} баллов.")
+        del user_states[user_id]
+        return
+
+    question_data = random.choice(available_questions)
     question_text = question_data["question"]
     options = question_data["options"]
     correct_answer = question_data["correct_answer"]
 
-    # Сохраняем правильный ответ для проверки
-    user_states[user_id]["current_question_correct_answer"] = correct_answer
+    # Сохраняем правильный ответ и ID вопроса
+    state["current_question_correct_answer"] = correct_answer
+    state["asked_questions"].append(question_data["id"])
 
     keyboard = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
     for option in options:
@@ -181,6 +222,26 @@ def handle_add_question_states(message):
         add_question(state["question"], state["options"], state["correct_answer"])
         del user_states[user_id]
         bot.send_message(user_id, "Вопрос успешно добавлен!")
+
+# Просмотр лучших результатов
+@bot.message_handler(commands=['highscores'])
+def show_highscores(message):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT username, score, date FROM highscores ORDER BY score DESC LIMIT 10')
+    rows = cursor.fetchall()
+    conn.close()
+
+    if not rows:
+        bot.send_message(message.chat.id, "Список лучших результатов пуст.")
+        return
+
+    highscore_text = "Топ 10 лучших результатов:\n"
+    for idx, row in enumerate(rows, start=1):
+        username, score, date = row
+        highscore_text += f"{idx}. {username} - {score} баллов ({date})\n"
+
+    bot.send_message(message.chat.id, highscore_text)
 
 # Главная страница (для проверки работы сервера)
 @app.route('/')
