@@ -5,7 +5,7 @@ import random
 from datetime import datetime
 
 # Настройки бота
-TOKEN = '7730389641:AAFeAaFanVRv6Vlv2lksJPjTcba_JcFy7UY'  # Замените на ваш токен
+TOKEN = ''  # Замените на ваш токен
 APP_URL = 'https://test23.pubns.ru/'  # Замените на ваш домен
 WEBHOOK_URL = f'{APP_URL}webhook'
 
@@ -125,6 +125,7 @@ def handle_game_states(message):
         state["step"] = "playing"
         send_next_question(user_id)
     elif step == "playing":
+        # Проверяем, есть ли доступные вопросы
         questions = get_all_questions()
         if not questions or len(state["asked_questions"]) >= len(questions):
             bot.send_message(user_id, "Все вопросы закончились! Игра окончена.")
@@ -175,11 +176,33 @@ def send_next_question(user_id):
     state["current_question_correct_answer"] = correct_answer
     state["asked_questions"].append(question_data["id"])
 
-    keyboard = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
+    # Создаем Inline-кнопки для выбора ответа
+    keyboard = types.InlineKeyboardMarkup()
     for option in options:
-        keyboard.add(types.KeyboardButton(option))
+        keyboard.add(types.InlineKeyboardButton(option, callback_data=option))
 
     bot.send_message(user_id, question_text, reply_markup=keyboard)
+
+# Обработка нажатия на кнопки с вариантами ответов
+@bot.callback_query_handler(func=lambda call: True)
+def handle_answer(call):
+    user_id = call.from_user.id
+    state = user_states.get(user_id)
+
+    if not state:
+        bot.answer_callback_query(call.id, "Игра уже завершена.")
+        return
+
+    correct_answer = state.get("current_question_correct_answer")
+    user_answer = call.data
+
+    if user_answer == correct_answer:
+        state["score"] += 1
+        bot.answer_callback_query(call.id, "Правильно!")
+    else:
+        bot.answer_callback_query(call.id, f"Неправильно. Правильный ответ: {correct_answer}")
+
+    send_next_question(user_id)
 
 # Команда для добавления вопроса
 @bot.message_handler(commands=['add'])
